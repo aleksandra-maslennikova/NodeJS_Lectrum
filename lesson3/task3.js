@@ -16,26 +16,57 @@ class Bank extends EventEmmiter {
 
   _validateCustomer(customer) {
     if (this._getCustomer("name", customer.name)) {
-      this.emit("error", `Customer with name ${customer.name} already exists`);
+      return this.emit(
+        "error",
+        `Customer with name ${customer.name} already exists`
+      );
     }
     if (customer.balance <= 0) {
-      this.emit("error", "Customer balance should be positive number");
+      return this.emit("error", "Customer balance should be positive number");
+    }
+
+    if (!customer.limit || typeof customer.limit !== "function") {
+      return this.emit(
+        "error",
+        "Customer limit is required field and should be a function"
+      );
     }
   }
 
   _validateTransaction(personId, sum, transaction) {
     const customer = this._getCustomer("personId", personId);
     if (!customer) {
-      this.emit("error", `Customer with personId ${personId} doesn't exist`);
+      return this.emit(
+        "error",
+        `Customer with personId ${personId} doesn't exist`
+      );
     }
-    if (transaction === "add" && sum <= 0) {
-      this.emit("error", "Sum should be positive");
+
+    if (transaction === "add") {
+      const updatedBalance = customer.balance + sum;
+      if (sum <= 0) {
+        return this.emit("error", "Sum should be positive");
+      }
+
+      if (!customer.limit(sum, customer.balance, updatedBalance)) {
+        return this.emit(
+          "error",
+          "Transaction is forbidden because of customer's limit "
+        );
+      }
     }
-    if (transaction === "withdraw" && sum < 0) {
-      this.emit("error", "Sum should be positive");
-    }
-    if (transaction === "withdraw" && customer.balance - sum < 0) {
-      this.emit("error", "Amount on balance less than sum of transaction");
+
+    if (transaction === "withdraw") {
+      const updatedBalance = customer.balance - sum;
+      if (sum < 0) {
+        return this.emit("error", "Sum should be positive");
+      }
+      if (customer.balance - sum < 0) {
+        return this.emit(
+          "error",
+          "Amount on balance less than sum of transaction"
+        );
+      }
     }
   }
 
@@ -44,7 +75,6 @@ class Bank extends EventEmmiter {
   }
 
   _getBalance(personId) {
-    this._validateTransaction(personId);
     const customer = this._getCustomer("personId", personId);
     return customer.balance;
   }
@@ -78,7 +108,15 @@ class Bank extends EventEmmiter {
       }
       return customer;
     });
-    console.log(this.customers);
+  }
+
+  _changeLimit(personId, callback) {
+    this._validateTransaction(personId);
+    this.customers = this.customers.map(customer =>
+      customer.personId === personId
+        ? { ...customer, limit: callback }
+        : customer
+    );
   }
 }
 
@@ -87,8 +125,9 @@ bank.on("error", error => {
   console.error(error);
 });
 
-const id1 = bank.register({ name: "Sasha", balance: 100 });
-const id2 = bank.register({ name: "Jon Doe", balance: 200 });
+bank.on("changeLimit", function(personId, callback) {
+  return this._changeLimit(personId, callback);
+});
 
 bank.on("add", function(personId, sum) {
   this._add(personId, sum);
@@ -107,6 +146,14 @@ bank.on("send", function(senderId, recipientId, sum) {
   this._send(senderId, recipientId, sum);
 });
 
+const id1 = bank.register({
+  name: "Sasha",
+  balance: 300,
+  limit: amount => amount < 100
+});
+
+const id2 = bank.register({ name: "Jon Doe", balance: 1000, limit: 1 });
+
 bank.emit("get", id1, balance => {
   console.log(`I have ${balance}$`);
 });
@@ -115,9 +162,11 @@ bank.emit("get", id2, balance => {
   console.log(`I have ${balance}$`);
 });
 
-// bank.emit("withdraw", id2, 45);
+bank.emit("changeLimit", id2, (amount, currentBalance) => {
+  return currentBalance > 800;
+});
 
-bank.emit("send", id1, id2, 50);
+bank.emit("send", id1, id2, 200);
 
 bank.emit("get", id1, balance => {
   console.log(`I have ${balance}$`);
@@ -126,8 +175,3 @@ bank.emit("get", id1, balance => {
 bank.emit("get", id2, balance => {
   console.log(`I have ${balance}$`);
 });
-
-// const id = 1;
-// bank.emit("get", id, (balance) => {
-//     console.log(`I have ${balance}$`);
-// })

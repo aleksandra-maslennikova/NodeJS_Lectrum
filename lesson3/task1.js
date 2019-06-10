@@ -1,101 +1,100 @@
 const EventEmmiter = require("events");
+const shortid = require("shortid");
 
 class Bank extends EventEmmiter {
-    constructor() {
-        super();
-        this.contragents = [];
+  constructor() {
+    super();
+    this.customers = [];
+  }
+
+  register(customer) {
+    this._validateCustomer(customer);
+    const personId = shortid.generate();
+    this.customers.push({ ...customer, personId });
+    return personId;
+  }
+
+  _validateCustomer(customer) {
+    if (this._getCustomer("name", customer.name)) {
+      this.emit("error", `Customer with name ${customer.name} already exists`);
     }
-
-    register(contragent) {
-        this._validateContragent(contragent);
-        const personId = new Date().getTime();
-        this.contragents.push({ ...contragent, personId });
-        return personId;
+    if (customer.balance <= 0) {
+      this.emit("error", "Customer balance should be positive number");
     }
+  }
 
-    _validateContragent(contragent) {
-        if (this._getContragent("name", contragent.name)) {
-            this.emit("error", `Contragent with name ${contragent.name} already exists`);
-        }
-        if (contragent.balance <= 0) {
-            this.emit("error", "Contragent balance should be positive number");
-        }
+  _validateTransaction(personId, sum, transaction) {
+    const customer = this._getCustomer("personId", personId);
+    if (!customer) {
+      this.emit("error", `Customer with personId ${personId} doesn't exist`);
     }
-
-    _validateTransaction(personId, sum, transaction) {
-        const contragent = this._getContragent("personId", personId);
-        if (!contragent) {
-            this.emit("error", `Contragent with personId ${personId} doesn't exist`);
-        }
-        if (transaction === "add" && sum <= 0) {
-            this.emit("error", "Sum should be positive");
-        }
-        if (transaction === "withdrow" && sum < 0) {
-            this.emit("error", "Sum should be positive");
-        }
-        if (transaction === "withdrow" && contragent.balance - sum < 0) {
-            this.emit("error", "Amount on balance less than sum of transaction");
-        }
+    if (transaction === "add" && sum <= 0) {
+      this.emit("error", "Sum should be positive");
     }
-
-    _getContragent(field, value) {
-        return this.contragents.find(contragent => contragent[field] === value);
+    if (transaction === "withdraw" && sum < 0) {
+      this.emit("error", "Sum should be positive");
     }
-
-    _getBalance(personId) {
-        this._validateTransaction(personId);
-        const contragent = this._getContragent("personId", personId);
-        return contragent.balance;
+    if (transaction === "withdraw" && customer.balance - sum < 0) {
+      this.emit("error", "Amount on balance less than sum of transaction");
     }
+  }
 
-    _add(personId, sum) {
-        this._validateTransaction(personId, sum, "add");
-        this.contragents = this.contragents.map(contragent => (
-            contragent.personId === personId ?
-                { ...contragent, balance: contragent.balance + sum } :
-                contragent));
+  _getCustomer(field, value) {
+    return this.customers.find(customer => customer[field] === value);
+  }
 
-    }
+  _getBalance(personId) {
+    this._validateTransaction(personId);
+    const customer = this._getCustomer("personId", personId);
+    return customer.balance;
+  }
 
-    _withdraw(personId, sum) {
-        this._validateTransaction(personId, sum, "withdraw");
-        this.contragents = this.contragents.map(contragent => (
-            contragent.personId === personId ?
-                { ...contragent, balance: contragent.balance - sum } :
-                contragent))
-    }
+  _add(personId, sum) {
+    this._validateTransaction(personId, sum, "add");
+    this.customers = this.customers.map(customer =>
+      customer.personId === personId
+        ? { ...customer, balance: customer.balance + sum }
+        : customer
+    );
+  }
 
+  _withdraw(personId, sum) {
+    this._validateTransaction(personId, sum, "withdraw");
+    this.customers = this.customers.map(customer =>
+      customer.personId === personId
+        ? { ...customer, balance: customer.balance - sum }
+        : customer
+    );
+  }
 }
 
 const bank = new Bank();
 bank.on("error", error => {
-    console.error(error);
-})
-
+  console.error(error);
+});
 
 const id1 = bank.register({ name: "Sasha", balance: 100 });
 const id2 = bank.register({ name: "Jon Doe", balance: 200 });
 const id3 = bank.register({ name: "Jon Doe", balance: 200 });
 
-
-bank.on("add", function (personId, sum) {
-    this._add(personId, sum);
+bank.on("add", function(personId, sum) {
+  this._add(personId, sum);
 });
 
-bank.on("withdraw", function (personId, sum) {
-    this._withdraw(personId, sum);
+bank.on("withdraw", function(personId, sum) {
+  this._withdraw(personId, sum);
 });
 
-bank.on("get", function (personId, callback) {
-    const balance = this._getBalance(personId);
-    callback(balance);
+bank.on("get", function(personId, callback) {
+  const balance = this._getBalance(personId);
+  callback(balance);
 });
 
 bank.emit("add", id1, 20);
 
-bank.emit("get", id1, (balance) => {
-    console.log(`I have ${balance}$`);
-})
+bank.emit("get", id1, balance => {
+  console.log(`I have ${balance}$`);
+});
 
 bank.emit("withdraw", id2, 45);
 
